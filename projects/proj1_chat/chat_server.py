@@ -20,7 +20,7 @@ class ChatServer(object):
         self.socket = socket.socket()
         self.socket.bind(("", int(port)))
         self.socket.listen(5)
-        self.connections = []
+        self.connections = [self.socket]
 
     def broadcast(self, sock, message):
         for socket in self.connections:
@@ -40,7 +40,7 @@ class ChatServer(object):
                 if socket == self.socket:
                     (new_socket, address) = self.socket.accept()
                     self.connections.append(new_socket)
-                    self.broadcast(socket, "Welcome to the ChatServer!")
+                    self.broadcast(socket, "Welcome to the ChatServer!\n")
                 else:
                     try:
                         message = socket.recv(4096)
