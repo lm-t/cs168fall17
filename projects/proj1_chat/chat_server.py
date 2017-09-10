@@ -7,12 +7,22 @@ import sys
 from utils import *
 
 args = sys.argv
-
+BUFFER_SIZE = 1024
 ### TO DO
 # Create Channel implementation
 #  - /join
 #  - /create
 #  - /list
+
+def recvall(sock):
+    #from stackoverflow "non-blocking socket in python"
+    alldata = ""
+    while len(data) < MESSAGE_LENGTH:
+        data = sock.recv(MESSAGE_LENGTH - len(data))
+        if not data:
+            return None
+        alldata += data
+    return alldata
 
 class ChatServer(object):
     """ChatServer will have multiple clients and have the ablility to create channels"""
@@ -21,6 +31,7 @@ class ChatServer(object):
         self.socket.bind(("", int(port)))
         self.socket.listen(5)
         self.connections = [self.socket]
+        self.clients = {}
 
     def broadcast(self, sock, message):
         for socket in self.connections:
@@ -38,14 +49,18 @@ class ChatServer(object):
             for socket in read:
                 ###New Connection
                 if socket == self.socket:
+                    #adding clients name to a dictionary by storing its specific port
                     (new_socket, address) = self.socket.accept()
                     self.connections.append(new_socket)
-                    self.broadcast(socket, "Welcome to the ChatServer!\n")
+                    name = new_socket.recv(BUFFER_SIZE)
+                    self.clients[address[1]] = name.replace(" ", "")
+
                 else:
                     try:
-                        message = socket.recv(4096)
+                        message = socket.recv(BUFFER_SIZE)
                         if data:
-                            self.broadcast(socket,"[" + str(socket.getpeername()) + "]" + data)
+                            #self.broadcast(socket, data)
+                            print data
                     except:
                         socket.close()
                         self.connections.remove(socket)
