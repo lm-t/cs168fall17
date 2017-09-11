@@ -40,12 +40,15 @@ class ChatClient(object):
             for socket in read:
                 if socket == self.socket:
                     message = socket.recv(BUFFER_SIZE)
-                    sys.stdout.write(message)
-                    self.prompt()
+                    if message:
+                        sys.stdout.write(message)
+                        self.prompt()
                 else:
                     message = sys.stdin.readline()
-                    #self.socket.send(message)
-                    #self.prompt()
+                    self.socket.send(message)
+                    #stll need to fix '[Me] ' formating
+                    self.prompt()
+
 
 if __name__ == '__main__':
     args = sys.argv
