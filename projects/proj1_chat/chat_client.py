@@ -11,6 +11,11 @@ def pad_message(message):
     message += " "
   return message[:MESSAGE_LENGTH]
 
+def unpad_message(message):
+    reverseMsg = message[::-1]
+    msg = reverseMsg.lstrip()[::-1]
+    return msg
+
 class ChatClient(object):
 
     def __init__(self, name, address, port):
@@ -37,17 +42,21 @@ class ChatClient(object):
         self.prompt()
         while True:
             read, write, error = select.select([sys.stdin, self.socket], [], [])
-            for socket in read:
-                if socket == self.socket:
-                    message = socket.recv(BUFFER_SIZE)
-                    if message:
-                        sys.stdout.write(message)
-                        self.prompt()
-                else:
-                    message = sys.stdin.readline()
-                    self.socket.send(message)
-                    #stll need to fix '[Me] ' formating
+            try:
+                for socket in read:
+                    if socket == self.socket:
+                        message = socket.recv(BUFFER_SIZE)
+                        if message:
+                            sys.stdout.write(CLIENT_WIPE_ME)
+                            sys.stdout.write("\r" + unpad_message(message) + "\n")
+                    else:
+                        client_message = sys.stdin.readline()
+                        self.socket.send(pad_message(client_message))
+                        #stll need to fix '[Me] ' formating
+                        #self.prompt()
                     self.prompt()
+            except:
+                sys.stdout.write(CLIENT_SERVER_DISCONNECTED.format(self.address, self.port))
 
 
 if __name__ == '__main__':

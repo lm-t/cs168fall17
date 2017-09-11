@@ -8,11 +8,11 @@ from utils import *
 
 args = sys.argv
 BUFFER_SIZE = 1024
-### TO DO
-# Create Channel implementation
-#  - /join
-#  - /create
-#  - /list
+
+def pad_message(message):
+  while len(message) < MESSAGE_LENGTH:
+    message += " "
+  return message[:MESSAGE_LENGTH]
 
 def recvall(sock):
     #from stackoverflow "non-blocking socket in python"
@@ -25,7 +25,7 @@ def recvall(sock):
     return alldata
 
 def isControlMessage(message):
-    if message[:7] == "/create" or message[:5] == "/join" or message[:5] == "/list":
+    if message[0] == "/":
         return True
     else:
         return False
@@ -46,14 +46,19 @@ class ChatServer(object):
         self.clients = {}
         self.channels = {}
 
-    def broadcast(self, sock, message):
-        for socket in self.connections:
-            if socket != self.socket and socket != sock:
-                try:
-                    socket.send(message)
-                except:
-                    socket.close()
-                    self.connections.remove(socket)
+    def broadcast(self, socket, message, isNotSpecial, chnl):
+        if isNotSpecial:
+            reverseMsg = message[::-1]
+            msg = reverseMsg.lstrip()[::-1]
+            client = "[%s] " % self.clients[socket]
+            msg = client + msg
+            print "client message: " + msg
+            #padded_message = pad_message(msg)
+        else:
+            msg = message
+        for sock in self.channels[chnl]:
+            if sock != self.socket and sock != socket:
+                sock.send(msg)
 
     def hasChannel(self, socket):
         for channel in self.channels.itervalues():
@@ -67,6 +72,13 @@ class ChatServer(object):
             socket.send(SERVER_CREATE_REQUIRES_ARGUMENT + "\n")
         elif message[1] in self.channels:
             socket.send(SERVER_CHANNEL_EXISTS.format(message[1]) + "\n")
+        elif self.hasChannel(socket):
+            for channel in self.channels.keys():
+                if socket in self.channels[channel]:
+                    client = self.clients[socket]
+                    self.broadcast(socket, SERVER_CLIENT_LEFT_CHANNEL.format(client), False, channel)
+                    self.channels[channel].remove(socket)
+                    self.channels[message[1]] = [socket]
         else:
             print "adding " + message[1]
             self.channels[message[1]] = [socket]
@@ -78,8 +90,14 @@ class ChatServer(object):
             socket.send(SERVER_NO_CHANNEL_EXISTS.format(message[1]) + "\n")
         else:
             print "joining " + message[1]
+            client = self.clients[socket]
+            if self.hasChannel(socket):
+                for channel in self.channels.keys():
+                    if socket in self.channels[channel]:
+                        self.broadcast(socket, SERVER_CLIENT_LEFT_CHANNEL.format(client), False, channel)
+                        self.channels[channel].remove(socket)
             self.channels[message[1]].append(socket)
-            """notify other clients of new join and channel leave"""
+            self.broadcast(socket, SERVER_CLIENT_JOINED_CHANNEL.format(client), False, message[1])
 
     def listChannel(self, socket, message):
         msg = ""
@@ -98,29 +116,35 @@ class ChatServer(object):
                     (new_socket, address) = self.socket.accept()
                     self.connections.append(new_socket)
                     name = new_socket.recv(BUFFER_SIZE)
-                    self.clients[socket] = name.replace(" ", "")
-                    print "Connected to client " + self.clients[socket]
+                    self.clients[new_socket] = name.replace(" ", "")
+                    print "Connected to client " + self.clients[new_socket]
 
                 else:
-                    try:
-                        message = socket.recv(BUFFER_SIZE)
-                        if message:
-                            if isControlMessage(message):
-                                msg = parseControlMessage(message)
-                                if msg[0] == "/create":
-                                    self.createChannel(socket, msg)
-                                elif msg[0] == "/join":
-                                    self.joinChannel(socket, msg)
-                                elif msg[0] == "/list":
-                                    self.listChannel(socket, msg)
-                            elif not self.hasChannel(socket):
-                                socket.send(SERVER_CLIENT_NOT_IN_CHANNEL + "\n")
-
-                            #self.broadcast(socket, data)
-                    except:
-                        socket.close()
-                        #print "closing connection to " + self.clients[socket]
-                        self.connections.remove(socket)
+                    # try:
+                    message = socket.recv(BUFFER_SIZE)
+                    if message:
+                        if isControlMessage(message):
+                            msg = parseControlMessage(message)
+                            if msg[0] == "/create":
+                                self.createChannel(socket, msg)
+                            elif msg[0] == "/join":
+                                self.joinChannel(socket, msg)
+                            elif msg[0] == "/list":
+                                self.listChannel(socket, msg)
+                            else:
+                                socket.send(SERVER_INVALID_CONTROL_MESSAGE.format(msg[0]))
+                        elif not self.hasChannel(socket):
+                            socket.send(SERVER_CLIENT_NOT_IN_CHANNEL + "\n")
+                        else:
+                            for channel in self.channels.keys():
+                                if socket in self.channels[channel]:
+                                    chnl = channel
+                            self.broadcast(socket, message, True, chnl)
+                    # except:
+                    #     print "socket closed!"
+                    #     socket.close()
+                    #     #print "closing connection to " + self.clients[socket]
+                    #     self.connections.remove(socket)
 
 if __name__ == '__main__':
     if len(args) != 2:
