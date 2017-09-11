@@ -42,21 +42,20 @@ class ChatClient(object):
         self.prompt()
         while True:
             read, write, error = select.select([sys.stdin, self.socket], [], [])
-            try:
-                for socket in read:
-                    if socket == self.socket:
-                        message = socket.recv(BUFFER_SIZE)
-                        if message:
-                            sys.stdout.write(CLIENT_WIPE_ME)
-                            sys.stdout.write("\r" + unpad_message(message) + "\n")
+            for socket in read:
+                if socket == self.socket:
+                    message = socket.recv(BUFFER_SIZE)
+                    if message:
+                        sys.stdout.write(CLIENT_WIPE_ME)
+                        sys.stdout.write("\r" + unpad_message(message) + "\n")
                     else:
-                        client_message = sys.stdin.readline()
-                        self.socket.send(pad_message(client_message))
-                        #stll need to fix '[Me] ' formating
-                        #self.prompt()
-                    self.prompt()
-            except:
-                sys.stdout.write(CLIENT_SERVER_DISCONNECTED.format(self.address, self.port))
+                        #server disconnected
+                        sys.stdout.write(CLIENT_SERVER_DISCONNECTED.format(self.address, self.port))
+                        sys.exit()
+                else:
+                    client_message = sys.stdin.readline()
+                    self.socket.send(pad_message(client_message))
+            self.prompt()
 
 
 if __name__ == '__main__':
