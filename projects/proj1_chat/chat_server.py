@@ -105,37 +105,6 @@ class ChatServer(object):
             msg = msg + channel + "\n"
         socket.send(msg)
 
-    def recvbuff(self, socket, message):
-        # print "message length", len(message)
-        # if len(message) < MESSAGE_LENGTH and len(message) > 1:
-        #     self.buffer[socket] += message
-        # elif len(message) == MESSAGE_LENGTH:
-        #     self.buffer[socket] =
-        # elif len(self.buffer[socket]) == MESSAGE_LENGTH:
-        #     #reset buffer and send message
-        #     message = self.buffer[socket]
-        #     #reset buffer
-        #     self.buffer[socket] = ""
-        # return message
-        buffer_message = ""
-        if len(message) == 0:
-            return message
-        for char in list(message):
-            if len(self.buffer[socket]) < MESSAGE_LENGTH:
-                self.buffer[socket] += char
-            elif self.buffer[socket] == MESSAGE_LENGTH:
-                buffer_message = self.buffer[socket]
-                self.buffer[socket] = ""
-        return buffer_message
-
-
-
-    def messageComplete(self, socket):
-        if socket in self.buffer:
-            return len(self.buffer[socket]) == MESSAGE_LENGTH
-        else:
-            return False
-
     def process(self, message, socket):
         if message:
             if isControlMessage(message):
