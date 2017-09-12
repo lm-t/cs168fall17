@@ -53,7 +53,6 @@ class ChatServer(object):
             client = "[%s] " % self.clients[socket]
             msg = client + msg
             print "client message: " + msg
-            #padded_message = pad_message(msg)
         else:
             msg = message
         for sock in self.channels[chnl]:
@@ -107,7 +106,6 @@ class ChatServer(object):
 
     def start(self):
         while True:
-            """will need to implement more features"""
             read, write, error = select.select(self.connections, [], [])
             for socket in read:
                 ###New Connection
@@ -144,21 +142,14 @@ class ChatServer(object):
                             #remove broken socket
                             if socket in self.connections:
                                 self.connections.remove(socket)
+                            client = self.clients[socket]
                             if self.hasChannel(socket):
                                 for channel in self.channels.keys():
                                     if socket in self.channels[channel]:
                                         self.broadcast(socket, SERVER_CLIENT_LEFT_CHANNEL.format(client), False, channel)
                                         self.channels[channel].remove(socket)
                     except:
-                        print "socket closed!"
-                        client = self.clients[socket]
-                        if self.hasChannel(socket):
-                            for channel in self.channels.keys():
-                                if socket in self.channels[channel]:
-                                    self.broadcast(socket, SERVER_CLIENT_LEFT_CHANNEL.format(client), False, channel)
-                                    self.channels[channel].remove(socket)
-                        #print "closing connection to " + self.clients[socket]
-                        #self.connections.remove(socket)
+                        print "socket closed"
                         self.clients.pop(socket)
                         socket.close()
 
