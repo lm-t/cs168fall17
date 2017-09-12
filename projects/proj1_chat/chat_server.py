@@ -45,6 +45,7 @@ class ChatServer(object):
         self.connections = [self.socket]
         self.clients = {}
         self.channels = {}
+        self.buffer = {}
 
     def broadcast(self, socket, message, isNotSpecial, chnl):
         if isNotSpecial:
@@ -104,6 +105,67 @@ class ChatServer(object):
             msg = msg + channel + "\n"
         socket.send(msg)
 
+    def recvbuff(self, socket, message):
+        # print "message length", len(message)
+        # if len(message) < MESSAGE_LENGTH and len(message) > 1:
+        #     self.buffer[socket] += message
+        # elif len(message) == MESSAGE_LENGTH:
+        #     self.buffer[socket] =
+        # elif len(self.buffer[socket]) == MESSAGE_LENGTH:
+        #     #reset buffer and send message
+        #     message = self.buffer[socket]
+        #     #reset buffer
+        #     self.buffer[socket] = ""
+        # return message
+        buffer_message = ""
+        if len(message) == 0:
+            return message
+        for char in list(message):
+            if len(self.buffer[socket]) < MESSAGE_LENGTH:
+                self.buffer[socket] += char
+            elif self.buffer[socket] == MESSAGE_LENGTH:
+                buffer_message = self.buffer[socket]
+                self.buffer[socket] = ""
+        return buffer_message
+
+
+
+    def messageComplete(self, socket):
+        if socket in self.buffer:
+            return len(self.buffer[socket]) == MESSAGE_LENGTH
+        else:
+            return False
+
+    def process(self, message, socket):
+        if message:
+            if isControlMessage(message):
+                msg = parseControlMessage(message)
+                if msg[0] == "/create":
+                    self.createChannel(socket, msg)
+                elif msg[0] == "/join":
+                    self.joinChannel(socket, msg)
+                elif msg[0] == "/list":
+                    self.listChannel(socket, msg)
+                else:
+                    socket.send(SERVER_INVALID_CONTROL_MESSAGE.format(msg[0]))
+            elif not self.hasChannel(socket):
+                socket.send(SERVER_CLIENT_NOT_IN_CHANNEL + "\n")
+            else:
+                for channel in self.channels.keys():
+                    if socket in self.channels[channel]:
+                        chnl = channel
+                self.broadcast(socket, message, True, chnl)
+        else:
+            #remove broken socket
+            if socket in self.connections:
+                self.connections.remove(socket)
+            client = self.clients[socket]
+            if self.hasChannel(socket):
+                for channel in self.channels.keys():
+                    if socket in self.channels[channel]:
+                        self.broadcast(socket, SERVER_CLIENT_LEFT_CHANNEL.format(client), False, channel)
+                        self.channels[channel].remove(socket)
+
     def start(self):
         while True:
             read, write, error = select.select(self.connections, [], [])
@@ -113,41 +175,26 @@ class ChatServer(object):
                     #adding clients name to a dictionary by storing its specific port
                     (new_socket, address) = self.socket.accept()
                     self.connections.append(new_socket)
+                    self.buffer[new_socket] = ""
                     name = new_socket.recv(BUFFER_SIZE)
                     self.clients[new_socket] = name.replace(" ", "")
                     print "Connected to client " + self.clients[new_socket]
-
                 else:
                     try:
                         message = socket.recv(BUFFER_SIZE)
-                        if message:
-                            if isControlMessage(message):
-                                msg = parseControlMessage(message)
-                                if msg[0] == "/create":
-                                    self.createChannel(socket, msg)
-                                elif msg[0] == "/join":
-                                    self.joinChannel(socket, msg)
-                                elif msg[0] == "/list":
-                                    self.listChannel(socket, msg)
-                                else:
-                                    socket.send(SERVER_INVALID_CONTROL_MESSAGE.format(msg[0]))
-                            elif not self.hasChannel(socket):
-                                socket.send(SERVER_CLIENT_NOT_IN_CHANNEL + "\n")
-                            else:
-                                for channel in self.channels.keys():
-                                    if socket in self.channels[channel]:
-                                        chnl = channel
-                                self.broadcast(socket, message, True, chnl)
-                        else:
-                            #remove broken socket
-                            if socket in self.connections:
-                                self.connections.remove(socket)
-                            client = self.clients[socket]
-                            if self.hasChannel(socket):
-                                for channel in self.channels.keys():
-                                    if socket in self.channels[channel]:
-                                        self.broadcast(socket, SERVER_CLIENT_LEFT_CHANNEL.format(client), False, channel)
-                                        self.channels[channel].remove(socket)
+                        # message = self.recvbuff(socket)
+                        # if self.messageComplete(socket):
+                        buffer_message = ""
+                        if len(message) != 0:
+                            for char in list(message):
+                                if len(self.buffer[socket]) < MESSAGE_LENGTH:
+                                    self.buffer[socket] += char
+                                print len(self.buffer[socket]), self.buffer[socket]
+                                if len(self.buffer[socket]) == MESSAGE_LENGTH:
+                                    buffer_message = self.buffer[socket]
+                                    self.buffer[socket] = ""
+                            message = buffer_message
+                        self.process(message, socket)
                     except:
                         print "socket closed"
                         self.clients.pop(socket)
