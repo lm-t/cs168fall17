@@ -76,7 +76,14 @@ class LearningSwitch(api.Entity):
         if reciever_name in self.table:
             # Send packet to reciever's port
             reciever_port = self.table[reciever_name]
+            packet.ttl -= 1
+            packet.trace.append(self)
             self.send(packet, reciever_port)
+        elif packet.ttl == 0:
+            # Drop the packet
+            return
         else:
             # Flood out all ports except the input port
+            packet.ttl -= 1
+            packet.trace.append(self)
             self.send(packet, in_port, flood=True)
