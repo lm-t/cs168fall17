@@ -20,6 +20,7 @@ class DVRouter(basics.DVRouterBase):
 
         """
         self.start_timer()  # Starts calling handle_timer() at correct rate
+        self.table = {} #key=host, value=latency,port
 
     def handle_link_up(self, port, latency):
         """
@@ -29,7 +30,10 @@ class DVRouter(basics.DVRouterBase):
         in.
 
         """
-        pass
+        # send RoutePacket(destination, +latency), port
+        for k,v in self.table.items():
+            host_latency = self.table[k][0]
+            self.send(RoutePacket(k, host_latency + latency), port)
 
     def handle_link_down(self, port):
         """
@@ -52,9 +56,13 @@ class DVRouter(basics.DVRouterBase):
         """
         #self.log("RX %s on %s (%s)", packet, port, api.current_time())
         if isinstance(packet, basics.RoutePacket):
-            pass
+            # Add additional hosts from other routers to table
+            self.start_timer(self.ROUTE_TIMEOUT) #???
+            self.table[packet.destination] = (packet.latency, port)
         elif isinstance(packet, basics.HostDiscoveryPacket):
-            pass
+            # Add host to table
+            host = packet.src
+            self.table[api.get_name(host)] = (0, port) #(latency, port)
         else:
             # Totally wrong behavior for the sake of demonstration only: send
             # the packet back to where it came from!
@@ -69,4 +77,6 @@ class DVRouter(basics.DVRouterBase):
         have expired.
 
         """
-        pass
+        # Part 1: Send RoutePackets to neighbors
+
+        # Part 2: Update any expiered entries
