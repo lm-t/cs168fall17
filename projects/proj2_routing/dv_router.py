@@ -20,7 +20,8 @@ class DVRouter(basics.DVRouterBase):
 
         """
         self.start_timer()  # Starts calling handle_timer() at correct rate
-        self.table = {} #key=host, value=latency,port
+        self.table = [] #(host, latency, port, time)
+        self.links = [] #list of links that router has
 
     def handle_link_up(self, port, latency):
         """
@@ -30,10 +31,13 @@ class DVRouter(basics.DVRouterBase):
         in.
 
         """
-        # send RoutePacket(destination, +latency), port
-        for k,v in self.table.items():
-            host_latency = self.table[k][0]
-            self.send(RoutePacket(k, host_latency + latency), port)
+        # Add link to list of links
+        link = (port, latency)
+        links.append(link)
+
+        # Send table through RoutePackets to link
+        for host in self.table:
+            pass
 
     def handle_link_down(self, port):
         """
@@ -42,7 +46,15 @@ class DVRouter(basics.DVRouterBase):
         The port number used by the link is passed in.
 
         """
-        pass
+        #remove link
+        for link in links:
+            if link[0] == port:
+                links.remove(link)
+        #route poison
+        if self.POISON_MODE:
+            for host in self.table:
+                if host[2] == port:
+                    host[1] == INFINITY
 
     def handle_rx(self, packet, port):
         """
@@ -56,17 +68,26 @@ class DVRouter(basics.DVRouterBase):
         """
         #self.log("RX %s on %s (%s)", packet, port, api.current_time())
         if isinstance(packet, basics.RoutePacket):
-            # Add additional hosts from other routers to table
-            self.start_timer(self.ROUTE_TIMEOUT) #???
-            self.table[packet.destination] = (packet.latency, port)
+            #checks poisoned packet
+            if packet.latency == INFINITY:
+                d = packet.destination
+            #send the packet back with poison
+            if self.POISON_MODE:
+                self.send(basics.RoutePacket(packet.destination, INFINITY), port)
+            #if host is not in table
+            if packet.destination not in self.table:
+                #add destination with (link latency + this latency) and current time
+            #else do minpath()
+            else:
+                pass
+
         elif isinstance(packet, basics.HostDiscoveryPacket):
-            # Add host to table
-            host = packet.src
-            self.table[api.get_name(host)] = (0, port) #(latency, port)
-        else:
-            # Totally wrong behavior for the sake of demonstration only: send
-            # the packet back to where it came from!
-            self.send(packet, port=port)
+            #add host to table
+            host = (packet.src, self.link[port], port, None)
+            self.table.append(host)
+            #send host to other links
+            self.send(basics.RoutePacket(host[0], host[1]), host[3], flood=True)
+
 
     def handle_timer(self):
         """
@@ -78,5 +99,6 @@ class DVRouter(basics.DVRouterBase):
 
         """
         # Part 1: Send RoutePackets to neighbors
-
-        # Part 2: Update any expiered entries
+        for link in links:
+            pass
+        # Part 2: Update any expired entries
