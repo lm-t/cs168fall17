@@ -91,9 +91,6 @@ class DVRouter(basics.DVRouterBase):
                 if newLatency < originalLatency:
                     #update vector with lower latency
                     self.table[packet.destination] = (newLatency, port, api.current_time(), originalLatency)
-                #elif update time of vector
-                elif hostVector[1] == port:
-                    self.table[packet.destination] = (hostVector[0], hostVector[1], api.current_time(), hostVector[3])
 
         elif isinstance(packet, basics.HostDiscoveryPacket):
             #add host to table
@@ -105,8 +102,7 @@ class DVRouter(basics.DVRouterBase):
         else:
             #forward regular packet
             isHairpin = packet.src != packet.dst
-            isIntable = packet.dst in self.table
-            if isinstance(packet.dst, api.HostEntity) and isHairpin and isIntable:
+            if isinstance(packet.dst, api.HostEntity) and isHairpin:
                 hostPort = self.table[packet.dst][1]
                 self.send(packet, hostPort)
 
@@ -121,16 +117,14 @@ class DVRouter(basics.DVRouterBase):
 
         """
         # Part 1: Send RoutePackets to neighbors
-        for host, hostVector in self.table.items():
+        for host in self.table:
+            hostVector = self.table[host]
             if self.POISON_MODE:
                 self.send(basics.RoutePacket(host, INFINITY), hostVector[1])
         # Part 2: Update any expired entries
-            #if host has no time -> flood
+            #if host has no time -> flood, unsure if needed
             if hostVector[2] == None:
-                #update time
-                self.table[host] = (hostVector[0], hostVector[1], api.current_time(), hostVector[3])
-                #flood to neighbors
                 self.send(basics.RoutePacket(host, hostVector[0]), hostVector[1], flood=True)
             elif api.current_time() - hostVector[2] >= self.ROUTE_TIMEOUT:
                 #send new packets
-                del self.table[host]
+                del hostVector
