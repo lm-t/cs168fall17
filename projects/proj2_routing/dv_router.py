@@ -78,12 +78,15 @@ class DVRouter(basics.DVRouterBase):
                 self.send(basics.RoutePacket(packet.destination, INFINITY), port)
             #if host is not in table
             elif packet.destination not in self.table:
-                #add destination with (link latency + this latency) and current time
+                #add host to table with (link latency + this latency) and current time
                 newLatency = packet.latency + self.portLatency[port]
                 self.table[packet.destination] = (newLatency, port, api.current_time(), None)
+                #flood new host to other switches/routers
+                self.send(basics.RoutePacket(packet.destination, newLatency), port, flood=True)
             #else try to update vector
             else:
-                originalLatency = self.table[packet.destination][0]
+                hostVector = self.table[packet.destination]
+                originalLatency = hostVector[0]
                 newLatency = packet.latency + self.portLatency[port]
                 if newLatency < originalLatency:
                     #update vector with lower latency
@@ -98,8 +101,10 @@ class DVRouter(basics.DVRouterBase):
 
         else:
             #forward regular packet
-            optimalPort = self.table[packet.dst][1]
-            self.send(packet, optimalPort)
+            isHairpin = packet.src != packet.dst
+            if isinstance(packet.dst, api.HostEntity) and isHairpin:
+                hostPort = self.table[packet.dst][1]
+                self.send(packet, hostPort)
 
 
     def handle_timer(self):
@@ -113,5 +118,13 @@ class DVRouter(basics.DVRouterBase):
         """
         # Part 1: Send RoutePackets to neighbors
         for host in self.table:
-            pass
+            hostVector = self.table[host]
+            if self.POISON_MODE:
+                self.send(basics.RoutePacket(host, INFINITY), hostVector[1])
         # Part 2: Update any expired entries
+            #if host has no time -> flood, unsure if needed
+            if hostVector[2] == None:
+                self.send(basics.RoutePacket(host, hostVector[0]), hostVector[1], flood=True)
+            elif api.current_time() - hostVector[2] >= self.ROUTE_TIMEOUT:
+                #send new packets
+                del hostVector
