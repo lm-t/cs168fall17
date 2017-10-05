@@ -20,8 +20,8 @@ class DVRouter(basics.DVRouterBase):
 
         """
         self.start_timer()  # Starts calling handle_timer() at correct rate
-        self.table = [] #(host, latency, port, time)
-        self.links = [] #list of links that router has
+        self.table = {} #key=host value=(latency, port, time, oldPort)
+        self.portLatency = {} #list of link latencies that router has
 
     def handle_link_up(self, port, latency):
         """
@@ -32,12 +32,12 @@ class DVRouter(basics.DVRouterBase):
 
         """
         # Add link to list of links
-        link = (port, latency)
-        links.append(link)
+        self.portLatency[port] = latency
 
         # Send table through RoutePackets to link
         for host in self.table:
-            pass
+            hostVector = self.table[host]
+            self.send(basics.RoutePacket(host, hostVector[0]), port)
 
     def handle_link_down(self, port):
         """
@@ -47,14 +47,13 @@ class DVRouter(basics.DVRouterBase):
 
         """
         #remove link
-        for link in links:
-            if link[0] == port:
-                links.remove(link)
+        del self.portLatency[port]
         #route poison
-        if self.POISON_MODE:
-            for host in self.table:
-                if host[2] == port:
-                    host[1] == INFINITY
+        for host in self.table:
+            if self.POISON_MODE and self.table[host][1] == port:
+                self.send(basics.RoutePacket(host, INFINITY), port, flood=True)
+            #remove from table
+            del self.table[host]
 
     def handle_rx(self, packet, port):
         """
@@ -70,23 +69,37 @@ class DVRouter(basics.DVRouterBase):
         if isinstance(packet, basics.RoutePacket):
             #checks poisoned packet
             if packet.latency == INFINITY:
-                d = packet.destination
+                #update host vector
+                oldPort = self.table[packet.destination][3]
+                oldLatency = self.portLatency[oldPort]
+                self.table[packet.destination] = (oldLatency, oldPort, api.current_time(), INFINITY)
             #send the packet back with poison
             if self.POISON_MODE:
                 self.send(basics.RoutePacket(packet.destination, INFINITY), port)
             #if host is not in table
-            if packet.destination not in self.table:
+            elif packet.destination not in self.table:
                 #add destination with (link latency + this latency) and current time
-            #else do minpath()
+                newLatency = packet.latency + self.portLatency[port]
+                self.table[packet.destination] = (newLatency, port, api.current_time(), None)
+            #else try to update vector
             else:
-                pass
+                originalLatency = self.table[packet.destination][0]
+                newLatency = packet.latency + self.portLatency[port]
+                if newLatency < originalLatency:
+                    #update vector with lower latency
+                    self.table[packet.destination] = (newLatency, port, api.current_time(), originalLatency)
 
         elif isinstance(packet, basics.HostDiscoveryPacket):
             #add host to table
-            host = (packet.src, self.link[port], port, None)
-            self.table.append(host)
+            hostVector = (self.portLatency[port], port, None, None)
+            self.table[packet.src] = hostVector
             #send host to other links
-            self.send(basics.RoutePacket(host[0], host[1]), host[3], flood=True)
+            self.send(basics.RoutePacket(packet.src, hostVector[0]), port, flood=True)
+
+        else:
+            #forward regular packet
+            optimalPort = self.table[packet.dst][1]
+            self.send(packet, optimalPort)
 
 
     def handle_timer(self):
@@ -99,6 +112,6 @@ class DVRouter(basics.DVRouterBase):
 
         """
         # Part 1: Send RoutePackets to neighbors
-        for link in links:
+        for host in self.table:
             pass
         # Part 2: Update any expired entries
