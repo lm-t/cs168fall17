@@ -53,6 +53,7 @@ class DVRouter(basics.DVRouterBase):
             if hostVector[1] == port:
                 if self.POISON_MODE:
                     self.send(basics.RoutePacket(host, INFINITY), port, flood=True)
+                    self.table[host] = (INFINITY, hostVector[1], hostVector[2], hostVector[3])
                 #remove from table
                 del self.table[host]
 
@@ -69,19 +70,19 @@ class DVRouter(basics.DVRouterBase):
         #self.log("RX %s on %s (%s)", packet, port, api.current_time())
         if isinstance(packet, basics.RoutePacket):
             #checks poisoned packet
-            if packet.latency == INFINITY:
-                #update host vector
-                oldPort = self.table[packet.destination][3]
-                oldLatency = self.portLatency[oldPort]
-                self.table[packet.destination] = (oldLatency, oldPort, api.current_time(), INFINITY)
-            #send the packet back with poison
-            if self.POISON_MODE:
-                self.send(basics.RoutePacket(packet.destination, INFINITY), port)
+            # if packet.latency >= INFINITY:
+                # #update host vector
+                # oldPort = self.table[packet.destination][3]
+                # oldLatency = self.portLatency[oldPort]
+                # self.table[packet.destination] = (oldLatency, oldPort, api.current_time(), INFINITY)
+            # #send the packet back with poison
+            # if self.POISON_MODE:
+            #     self.send(basics.RoutePacket(packet.destination, INFINITY), port)
             #if host is not in table
-            elif packet.destination not in self.table:
+            if packet.destination not in self.table:
                 #add host to table with (link latency + this latency) and current time
                 newLatency = packet.latency + self.portLatency[port]
-                self.table[packet.destination] = (newLatency, port, api.current_time(), None)
+                self.table[packet.destination] = (newLatency, port, api.current_time(), port)
                 #flood new host to other switches/routers
                 self.send(basics.RoutePacket(packet.destination, newLatency), port, flood=True)
             #else try to update vector
@@ -89,18 +90,22 @@ class DVRouter(basics.DVRouterBase):
                 hostVector = self.table[packet.destination]
                 originalLatency = hostVector[0]
                 newLatency = packet.latency + self.portLatency[port]
-                if newLatency < originalLatency:
+                if self.POISON_MODE:
+                    #skip regular procedure
+                    pass
+                elif newLatency < originalLatency:
                     #update vector with lower latency
                     self.table[packet.destination] = (newLatency, port, api.current_time(), originalLatency)
                 elif hostVector[1] == port:
                     #update time
-                    self.table[packet.destination] = (originalLatency, hostVector[1], api.current_time(), hostVector[3])
                     if newLatency > originalLatency:
                         self.table[packet.destination] = (newLatency, hostVector[1], api.current_time(), hostVector[3])
+                    else:
+                        self.table[packet.destination] = (originalLatency, hostVector[1], api.current_time(), hostVector[3])
 
         elif isinstance(packet, basics.HostDiscoveryPacket):
             #add host to table
-            hostVector = (self.portLatency[port], port, None, None)
+            hostVector = (self.portLatency[port], port, None, port)
             self.table[packet.src] = hostVector
             #send host to other links
             self.send(basics.RoutePacket(packet.src, hostVector[0]), port, flood=True)
@@ -111,7 +116,9 @@ class DVRouter(basics.DVRouterBase):
             isIntable = packet.dst in self.table
             if isinstance(packet.dst, api.HostEntity) and isHairpin and isIntable:
                 hostPort = self.table[packet.dst][1]
-                self.send(packet, hostPort)
+                hostLatency = self.table[packet.dst][0]
+                if not hostLatency >= INFINITY:
+                    self.send(packet, hostPort)
 
 
     def handle_timer(self):
@@ -125,8 +132,8 @@ class DVRouter(basics.DVRouterBase):
         """
         # Part 1: Send RoutePackets to neighbors
         for host, hostVector in self.table.items():
-            if self.POISON_MODE:
-                self.send(basics.RoutePacket(host, INFINITY), hostVector[1])
+            # if self.POISON_MODE:
+            #     self.send(basics.RoutePacket(host, INFINITY), hostVector[1])
         # Part 2: Update any expired entries
             #if host has no time -> flood
             if hostVector[2] == None:
@@ -135,5 +142,5 @@ class DVRouter(basics.DVRouterBase):
                 #flood tables to neighbors
                 self.send(basics.RoutePacket(host, hostVector[0]), flood=True)
             else:
-                #send new packets
+                #remove expired entries
                 del self.table[host]
