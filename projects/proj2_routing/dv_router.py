@@ -22,6 +22,7 @@ class DVRouter(basics.DVRouterBase):
         self.start_timer()  # Starts calling handle_timer() at correct rate
         self.table = {} #key=host value=(latency, port, time, oldPort)
         self.portLatency = {} #list of link latencies that router has
+        self.directRoute = {}
 
     def handle_link_up(self, port, latency):
         """
@@ -48,14 +49,17 @@ class DVRouter(basics.DVRouterBase):
         """
         #remove link
         del self.portLatency[port]
-        #route poison
         for host, hostVector in self.table.items():
             if hostVector[1] == port:
                 if self.POISON_MODE:
+                    #route poison
                     self.send(basics.RoutePacket(host, INFINITY), port, flood=True)
                     self.table[host] = (INFINITY, hostVector[1], hostVector[2], hostVector[3])
                 #remove from table
                 del self.table[host]
+                #direct route fallback
+                if host in self.directRoute:
+                    self.table[host] = self.directRoute[host]
 
     def handle_rx(self, packet, port):
         """
@@ -69,15 +73,6 @@ class DVRouter(basics.DVRouterBase):
         """
         #self.log("RX %s on %s (%s)", packet, port, api.current_time())
         if isinstance(packet, basics.RoutePacket):
-            #checks poisoned packet
-            # if packet.latency >= INFINITY:
-                # #update host vector
-                # oldPort = self.table[packet.destination][3]
-                # oldLatency = self.portLatency[oldPort]
-                # self.table[packet.destination] = (oldLatency, oldPort, api.current_time(), INFINITY)
-            # #send the packet back with poison
-            # if self.POISON_MODE:
-            #     self.send(basics.RoutePacket(packet.destination, INFINITY), port)
             #if host is not in table
             if packet.destination not in self.table:
                 #add host to table with (link latency + this latency) and current time
@@ -90,15 +85,21 @@ class DVRouter(basics.DVRouterBase):
                 hostVector = self.table[packet.destination]
                 originalLatency = hostVector[0]
                 newLatency = packet.latency + self.portLatency[port]
+                # if repr(self) == "<DVRouter s1>":
+                #     print(repr(packet), self.portLatency[port])
                 if self.POISON_MODE:
                     #skip regular procedure
                     pass
+                elif self.directRoute.has_key(packet.destination) and self.directRoute[packet.destination][0] < originalLatency:
+                    #update to direct route if possible
+                    self.table[packet.destination] = self.directRoute[packet.destination]
                 elif newLatency < originalLatency:
                     #update vector with lower latency
                     self.table[packet.destination] = (newLatency, port, api.current_time(), originalLatency)
                 elif hostVector[1] == port:
                     #update time
                     if newLatency > originalLatency:
+                        #update latency
                         self.table[packet.destination] = (newLatency, hostVector[1], api.current_time(), hostVector[3])
                     else:
                         self.table[packet.destination] = (originalLatency, hostVector[1], api.current_time(), hostVector[3])
@@ -107,6 +108,7 @@ class DVRouter(basics.DVRouterBase):
             #add host to table
             hostVector = (self.portLatency[port], port, None, port)
             self.table[packet.src] = hostVector
+            self.directRoute[packet.src] = hostVector
             #send host to other links
             self.send(basics.RoutePacket(packet.src, hostVector[0]), port, flood=True)
 
@@ -132,8 +134,8 @@ class DVRouter(basics.DVRouterBase):
         """
         # Part 1: Send RoutePackets to neighbors
         for host, hostVector in self.table.items():
-            # if self.POISON_MODE:
-            #     self.send(basics.RoutePacket(host, INFINITY), hostVector[1])
+            # if repr(self) == "<DVRouter s1>":
+            #     print(self.table)
         # Part 2: Update any expired entries
             #if host has no time -> flood
             if hostVector[2] == None:
