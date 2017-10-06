@@ -86,14 +86,14 @@ class DVRouter(basics.DVRouterBase):
                 originalLatency = hostVector[0]
                 newLatency = packet.latency + self.portLatency[port]
                 # if repr(self) == "<DVRouter s1>":
-                #     print(repr(packet), self.portLatency[port])
+                #     print(repr(packet), port)
                 if self.POISON_MODE:
                     #skip regular procedure
                     pass
                 elif self.directRoute.has_key(packet.destination) and self.directRoute[packet.destination][0] < originalLatency:
                     #update to direct route if possible
                     self.table[packet.destination] = self.directRoute[packet.destination]
-                elif newLatency < originalLatency:
+                elif newLatency <= originalLatency:
                     #update vector with lower latency
                     self.table[packet.destination] = (newLatency, port, api.current_time(), originalLatency)
                 elif hostVector[1] == port:
