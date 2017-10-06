@@ -108,7 +108,8 @@ class DVRouter(basics.DVRouterBase):
         else:
             #forward regular packet
             isHairpin = packet.src != packet.dst #need to better implement
-            if isinstance(packet.dst, api.HostEntity) and isHairpin:
+            isIntable = packet.dst in self.table
+            if isinstance(packet.dst, api.HostEntity) and isHairpin and isIntable:
                 hostPort = self.table[packet.dst][1]
                 self.send(packet, hostPort)
 
@@ -135,4 +136,4 @@ class DVRouter(basics.DVRouterBase):
                 self.send(basics.RoutePacket(host, hostVector[0]), flood=True)
             else:
                 #send new packets
-                del hostVector
+                del self.table[host]
