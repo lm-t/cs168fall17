@@ -85,24 +85,20 @@ class DVRouter(basics.DVRouterBase):
                 hostVector = self.table[packet.destination]
                 originalLatency = hostVector[0]
                 newLatency = packet.latency + self.portLatency[port]
-                # if repr(self) == "<DVRouter s1>":
-                #     print(repr(packet), port)
-                if self.POISON_MODE:
-                    #skip regular procedure
-                    pass
-                elif self.directRoute.has_key(packet.destination) and self.directRoute[packet.destination][0] < originalLatency:
+                if self.directRoute.has_key(packet.destination) and self.directRoute[packet.destination][0] < originalLatency:
                     #update to direct route if possible
                     self.table[packet.destination] = self.directRoute[packet.destination]
-                elif newLatency <= originalLatency:
-                    #update vector with lower latency
-                    self.table[packet.destination] = (newLatency, port, api.current_time(), originalLatency)
                 elif hostVector[1] == port:
                     #update time
                     if newLatency > originalLatency:
                         #update latency
                         self.table[packet.destination] = (newLatency, hostVector[1], api.current_time(), hostVector[3])
+                        self.send(basics.RoutePacket(packet.destination, newLatency), port, flood=True)
                     else:
                         self.table[packet.destination] = (originalLatency, hostVector[1], api.current_time(), hostVector[3])
+                elif newLatency <= originalLatency:
+                    #update vector with lower latency
+                    self.table[packet.destination] = (newLatency, port, api.current_time(), originalLatency)
 
         elif isinstance(packet, basics.HostDiscoveryPacket):
             #add host to table
@@ -134,15 +130,13 @@ class DVRouter(basics.DVRouterBase):
         """
         # Part 1: Send RoutePackets to neighbors
         for host, hostVector in self.table.items():
-            # if repr(self) == "<DVRouter s1>":
-            #     print(self.table)
         # Part 2: Update any expired entries
             #if host has no time -> flood
             if hostVector[2] == None:
                 self.send(basics.RoutePacket(host, hostVector[0]), hostVector[1], flood=True)
             elif api.current_time() - hostVector[2] < self.ROUTE_TIMEOUT:
                 #flood tables to neighbors
-                self.send(basics.RoutePacket(host, hostVector[0]), flood=True)
+                self.send(basics.RoutePacket(host, hostVector[0]), hostVector[1], flood=True)
             else:
                 #remove expired entries
                 del self.table[host]
