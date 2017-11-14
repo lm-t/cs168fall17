@@ -72,16 +72,42 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
             # send the packet there.
             if packet.is_raw_data:
                 packet_key = (packet.src, packet.dest)
+                #add packet payload to block payload
                 if packet_key not in self.buffers.keys():
                     self.buffers[packet_key] = packet.payload
                 else:
                     block_payload = self.buffers[packet_key]
                     block_payload += packet.payload
                     self.buffers[packet_key] = block_payload
-                self.send(packet, self.address_to_port[packet.dest])
+                #if buffer payload is full or is_fin
+                block_payload = self.buffers[packet_key]
+                if len(block_payload) > BLOCK_SIZE and packet.is_fin:
+                    remainder = block_payload[BLOCK_SIZE:]
+                    #add block payload to hashes
+                    hasch = utils.get_hash(block_payload[:BLOCK_SIZE])
+                    self.hashes[hasch] = block_payload[:BLOCK_SIZE]
+                    #!!!send_multiple!!!
+                    #add remainder payload to hashes
+                    remainder_hash = utils.get_hash(remainder)
+                    self.hashes[remainder_hash] = remainder
+                    #!!!send_multiple with is_fin flag set!!!
+                elif len(block_payload) <= BLOCK_SIZE and packet.is_fin:
+                    hasch = utils.get_hash(block_payload)
+                    self.hashes[hasch] = block_payload
+                    #!!!send_multiple with is_fin flag set!!!
+                elif len(block_payload) >= BLOCK_SIZE:
+                    remainder = block_payload[BLOCK_SIZE:]
+                    hasch = utils.get_hash(block_payload[:BLOCK_SIZE])
+                    self.hashes[hasch] = block_payload[:BLOCK_SIZE]
+                    #!!!send_multiple!!!
+                    #if there's a remainder then update block_payload
+                    if len(remainder) > 0:
+                        self.buffers[packet_key] = remainder
+                #self.send(packet, self.address_to_port[packet.dest]) for reference
             else:
+                #get block payload from hashes
                 block_payload = self.hashes[packet.payload]
-                send_multiple(block_payload)
+                #!!!send_multiple(block_payload, self.address_to_port[packet.dest], packet.is_fin)!!!
         #Case 2
         else:
             # The packet must be destined to a host connected to the other middlebox
