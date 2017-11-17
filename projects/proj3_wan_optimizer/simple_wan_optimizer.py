@@ -51,11 +51,15 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                     True,
                     False,
                     pload)
-                packets.append(pckt)
+                self.send(pckt, port)
             if is_fin:
-                packets[-1].is_fin = True
-            for packet in packets:
-                self.send(packet, port)
+                pckt = Packet(
+                    packet_key[0],
+                    packet_key[1],
+                    True,
+                    True,
+                    '')
+                self.send(pckt, port)
 
         packet_key = (packet.src, packet.dest)
         #Case 1
@@ -123,10 +127,10 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                 hasch = utils.get_hash(block_payload[:WanOptimizer.BLOCK_SIZE])
                 if hasch in self.hashes.keys():
                     ###send hash packet
-                    send_with_hash(hasch, packet.is_fin)
+                    send_with_hash(hasch, False)
                 else:
                     self.hashes[hasch] = block_payload[:WanOptimizer.BLOCK_SIZE]
-                    send_multiple(block_payload, self.wan_port, packet.is_fin)
+                    send_multiple(block_payload, self.wan_port, False)
                 #send remainder_payload
                 remainder_hash = utils.get_hash(remainder)
                 if remainder_hash in self.hashes.keys():
@@ -135,7 +139,7 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                 else:
                     self.hashes[remainder_hash] = remainder
                     send_multiple(remainder, self.wan_port, packet.is_fin)
-            elif len(block_payload) <= WanOptimizer.BLOCK_SIZE and packet.is_fin:
+            elif len(block_payload) == WanOptimizer.BLOCK_SIZE or packet.is_fin:
                 #send hash packet or multiple packets
                 hasch = utils.get_hash(block_payload)
                 if hasch in self.hashes.keys():
@@ -144,6 +148,8 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                 else:
                     self.hashes[hasch] = block_payload
                     send_multiple(block_payload, self.wan_port, packet.is_fin)
+                #clear buffer
+                self.buffers[packet_key] = ''
             elif len(block_payload) >= WanOptimizer.BLOCK_SIZE:
                 remainder = block_payload[WanOptimizer.BLOCK_SIZE:]
                 hasch = utils.get_hash(block_payload[:WanOptimizer.BLOCK_SIZE])
@@ -153,6 +159,8 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                 else:
                     self.hashes[hasch] = block_payload[:WanOptimizer.BLOCK_SIZE]
                     send_multiple(block_payload[:WanOptimizer.BLOCK_SIZE], self.wan_port, packet.is_fin)
+                #update buffer
+                self.buffers[packet_key] = ''
                 #if there's a remainder then update block_payload
                 if len(remainder) > 0:
                     self.buffers[packet_key] = remainder
