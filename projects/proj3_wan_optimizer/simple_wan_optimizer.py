@@ -90,13 +90,19 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                     #add remainder payload to hashes
                     remainder_hash = utils.get_hash(remainder)
                     self.hashes[remainder_hash] = remainder
-                elif len(block_payload) <= WanOptimizer.BLOCK_SIZE and packet.is_fin:
+                    #clear buffer
+                    self.buffers[packet_key] = ''
+                elif len(block_payload) == WanOptimizer.BLOCK_SIZE or packet.is_fin:
                     hasch = utils.get_hash(block_payload)
                     self.hashes[hasch] = block_payload
+                    #clear buffer
+                    self.buffers[packet_key] = ''
                 elif len(block_payload) >= WanOptimizer.BLOCK_SIZE:
                     remainder = block_payload[WanOptimizer.BLOCK_SIZE:]
                     hasch = utils.get_hash(block_payload[:WanOptimizer.BLOCK_SIZE])
                     self.hashes[hasch] = block_payload[:WanOptimizer.BLOCK_SIZE]
+                    #clear buffer
+                    self.buffers[packet_key] = ''
                     #if there's a remainder then update block_payload
                     if len(remainder) > 0:
                         self.buffers[packet_key] = remainder
