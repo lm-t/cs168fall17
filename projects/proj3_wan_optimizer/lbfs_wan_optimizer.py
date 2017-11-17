@@ -13,6 +13,8 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
     def __init__(self):
         wan_optimizer.BaseWanOptimizer.__init__(self)
         # Add any code that you like here (but do not add any constructor arguments).
+        self.hashes = {} #key:value -> hash:block
+        self.buffers = {} #key:value -> (source, destination):block
         return
 
     def receive(self, packet):
@@ -23,15 +25,113 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
         packets across the WAN. You should change this function to implement the
         functionality described in part 2.  You are welcome to implement private
         helper fuctions that you call here. You should *not* be calling any functions
-        or directly accessing any variables in the other middlebox on the other side of 
+        or directly accessing any variables in the other middlebox on the other side of
         the WAN; this WAN optimizer should operate based only on its own local state
         and packets that have been received.
         """
-        if packet.dest in self.address_to_port:
+        def send_with_hash(hasch, is_fin):
+            #send hash packet
+            is_raw_data = False
+            hash_packet = Packet(
+                packet_key[0],
+                packet_key[1],
+                is_raw_data,
+                is_fin,
+                hasch)
+            self.send(hash_packet, self.wan_port)
+        def send_multiple(block_payload, port, is_fin):
+            packets = []
+            for i in range(0, len(block_payload), utils.MAX_PACKET_SIZE):
+                pload = block_payload[i: i + utils.MAX_PACKET_SIZE]
+                pckt = Packet(
+                    packet_key[0],
+                    packet_key[1],
+                    True,
+                    False,
+                    pload)
+                self.send(pckt, port)
+            if is_fin:
+                pckt = Packet(
+                    packet_key[0],
+                    packet_key[1],
+                    True,
+                    True,
+                    '')
+                self.send(pckt, port)
+
+        packet_key = (packet.src, packet.dest)
+        #Case 1
+        if packet.src in self.address_to_port and packet.dest in self.address_to_port:
+            # The packet is from a client connected to this middlebox and
+            # the packet is destined to a client connected to this middlebox
+            self.send(packet, self.address_to_port[packet.dest])
+        elif packet.dest in self.address_to_port:
             # The packet is destined to one of the clients connected to this middlebox;
             # send the packet there.
-            self.send(packet, self.address_to_port[packet.dest])
+            # self.send(packet, self.address_to_port[packet.dest])
+            if packet.is_raw_data:
+                # packet_key = (packet.src, packet.dest)
+
+                #add packet payload to block payload
+                if packet_key not in self.buffers.keys():
+                    self.buffers[packet_key] = packet.payload
+                else:
+                    block_payload = self.buffers[packet_key]
+                    block_payload += packet.payload
+                    self.buffers[packet_key] = block_payload
+                #break blocks using delimiter
+                buffer_size = len(self.buffers[packet_key])
+                hasch = utils.get_hash(self.buffers[packet_key][buffer_size - 48:])
+                if buffer_size >= 48:
+                    bit_string = utils.get_last_n_bits(hasch, 13)
+                    if bit_string == WanOptimizer.GLOBAL_MATCH_BITSTRING or packet.is_fin:
+                        self.hashes[hasch] = self.buffers[packet_key]
+                        ##send packet
+                        #clear buffer
+                        self.buffers[packet_key] = ''
+                elif packet.is_fin:
+                    self.hashes[hasch] = self.buffers[packet_key]
+                    ##send packet
+                    #clear buffer
+                    self.buffers[packet_key] = ''
+            else:
+                #get block payload from hashes
+                block_payload = self.hashes[packet.payload]
+                send_multiple(block_payload, self.address_to_port[packet.dest], packet.is_fin)
         else:
             # The packet must be destined to a host connected to the other middlebox
             # so send it across the WAN.
-            self.send(packet, self.wan_port)
+            # self.send(packet, self.wan_port)
+
+            #add packet payload to block payload
+            if packet_key not in self.buffers.keys():
+                self.buffers[packet_key] = packet.payload
+            else:
+                block_payload = self.buffers[packet_key]
+                block_payload += packet.payload
+                self.buffers[packet_key] = block_payload
+            #get block from buffer
+            buffer_size = len(self.buffers[packet_key])
+            if buffer_size > 48:
+                first = 0
+                last = max(48, buffer_size - packet.size())
+                while last <= buffer_size:
+                    hasch = utils.get_hash(self.buffers[packet_key][last - 48: last])
+                    bit_string = utils.get_last_n_bits(hasch, 13)
+                    if bit_string == WanOptimizer.GLOBAL_MATCH_BITSTRING:
+                        new_hasch = utils.get_hash(self.buffers[packet_key][first:last])
+                        #send buffer[packet_key][first:last], wan_port
+                        #update buffer
+                        self.buffers[packet_key] = self.buffers[packet_key][last:]
+                        first = last
+                        last += 48
+                    else:
+                        last += 1
+            if packet.is_fin:
+                if buffer_size > 0:
+                    hasch = utils.get_hash(self.buffers[packet_key])
+                    #send packet
+                else:
+                    #send empty packet with is_fin
+                #clear buffer
+                self.buffers[packet_key] = ''
