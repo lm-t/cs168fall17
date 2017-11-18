@@ -1,4 +1,6 @@
 import wan_optimizer
+import utils
+from tcp_packet import Packet
 
 class WanOptimizer(wan_optimizer.BaseWanOptimizer):
     """ WAN Optimizer that divides data into variable-sized
@@ -40,15 +42,14 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                 hasch)
             self.send(hash_packet, self.wan_port)
         def send_multiple(block_payload, port, is_fin):
-            packets = []
-            for i in range(0, len(block_payload), utils.MAX_PACKET_SIZE):
-                pload = block_payload[i: i + utils.MAX_PACKET_SIZE]
+            while len(block_payload) > utils.MAX_PACKET_SIZE:
                 pckt = Packet(
-                    packet_key[0],
-                    packet_key[1],
-                    True,
-                    False,
-                    pload)
+                        packet_key[0],
+                        packet_key[1],
+                        True,
+                        False,
+                        block_payload[:utils.MAX_PACKET_SIZE])
+                block_payload = block_payload[:utils.MAX_PACKET_SIZE]
                 self.send(pckt, port)
             if is_fin:
                 pckt = Packet(
@@ -60,7 +61,6 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                 self.send(pckt, port)
 
         packet_key = (packet.src, packet.dest)
-        #Case 1
         if packet.src in self.address_to_port and packet.dest in self.address_to_port:
             # The packet is from a client connected to this middlebox and
             # the packet is destined to a client connected to this middlebox
@@ -68,10 +68,7 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
         elif packet.dest in self.address_to_port:
             # The packet is destined to one of the clients connected to this middlebox;
             # send the packet there.
-            # self.send(packet, self.address_to_port[packet.dest])
             if packet.is_raw_data:
-                # packet_key = (packet.src, packet.dest)
-
                 #add packet payload to block payload
                 if packet_key not in self.buffers.keys():
                     self.buffers[packet_key] = packet.payload
@@ -86,18 +83,26 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                     bit_string = utils.get_last_n_bits(hasch, 13)
                     if bit_string == WanOptimizer.GLOBAL_MATCH_BITSTRING or packet.is_fin:
                         self.hashes[hasch] = self.buffers[packet_key]
-                        ##send packet
+                        ##send multiple packets
+                        send_multiple(self.buffers[packet_key], self.address_to_port[packet.dest], packet.is_fin)
                         #clear buffer
                         self.buffers[packet_key] = ''
                 elif packet.is_fin:
                     self.hashes[hasch] = self.buffers[packet_key]
-                    ##send packet
+                    ##send multiple packets
+                    send_multiple(self.buffers[packet_key], self.address_to_port[packet.dest], packet.is_fin)
                     #clear buffer
                     self.buffers[packet_key] = ''
+                else:
+                    self.send(packet, self.address_to_port[packet.dest])
             else:
+                #clear buffer
+                self.buffers[packet_key] = ''
+                send_multiple(self.buffers[packet_key], self.address_to_port[packet.dest], packet.is_fin)
+                # self.send(packet, self.address_to_port[packet.dest])
                 #get block payload from hashes
-                block_payload = self.hashes[packet.payload]
-                send_multiple(block_payload, self.address_to_port[packet.dest], packet.is_fin)
+                # block_payload = self.hashes[packet.payload]
+                #send_multiple(block_payload, self.address_to_port[packet.dest], packet.is_fin)
         else:
             # The packet must be destined to a host connected to the other middlebox
             # so send it across the WAN.
@@ -121,6 +126,12 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                     if bit_string == WanOptimizer.GLOBAL_MATCH_BITSTRING:
                         new_hasch = utils.get_hash(self.buffers[packet_key][first:last])
                         #send buffer[packet_key][first:last], wan_port
+                        if new_hasch in self.hashes.keys():
+                            send_with_hash(new_hasch, packet.is_fin)
+                        else:
+                            self.hashes[new_hasch] = self.buffers[packet_key][first:last]
+                            #send_multiple
+                            send_multiple(self.buffers[packet_key], self.wan_port, packet.is_fin)
                         #update buffer
                         self.buffers[packet_key] = self.buffers[packet_key][last:]
                         first = last
@@ -131,7 +142,14 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                 if buffer_size > 0:
                     hasch = utils.get_hash(self.buffers[packet_key])
                     #send packet
-                else:
-                    #send empty packet with is_fin
-                #clear buffer
-                self.buffers[packet_key] = ''
+                    if hasch in self.hashes.keys():
+                        send_with_hash(hasch, packet.is_fin)
+                    else:
+                        self.hashes[hasch] = self.buffers[packet_key]
+                        #send_multiple
+                        send_multiple(self.buffers[packet_key], self.wan_port, packet.is_fin)
+                    #clear buffer
+                    self.buffers[packet_key] = ''
+            else:
+                #send packet to WAN
+                self.send(packet, self.wan_port)
