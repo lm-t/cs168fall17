@@ -78,25 +78,21 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                     self.buffers[packet_key] = block_payload
                 #break blocks using delimiter
                 buffer_size = len(self.buffers[packet_key])
-                place_holder = 0
-                while buffer_size >= 48:
-                    window = self.buffers[packet_key][place_holder:48 + place_holder]
+                place_holder = max(buffer_size - len(packet.payload), 47)
+                while place_holder < len(self.buffers[packet_key]):
+                    place_holder += 1
+                    window = self.buffers[packet_key][place_holder - 48:place_holder]
                     window_hash = utils.get_hash(window)
                     low_order_13 = utils.get_last_n_bits(window_hash, 13)
                     if low_order_13 == WanOptimizer.GLOBAL_MATCH_BITSTRING:
-                        block_payload = self.buffers[packet_key][:place_holder + 48]
+                        block_payload = self.buffers[packet_key][:place_holder]
                         hasch = utils.get_hash(block_payload)
                         self.hashes[hasch] = block_payload
-                        #send_multiple with is_fin
+                        #send_multiple
                         send_multiple(block_payload, self.address_to_port[packet.dest], False)
                         #clear buffer
-                        self.buffers[packet_key] = self.buffers[packet_key][place_holder + 48:]
-                        place_holder += 48
-                        buffer_size -= 48
-                    else:
-                        #slide window by 1
-                        place_holder += 1
-                        buffer_size -= 1
+                        self.buffers[packet_key] = self.buffers[packet_key][place_holder:]
+                        place_holder = 47
                 if packet.is_fin:
                     hasch = utils.get_hash(self.buffers[packet_key])
                     self.hashes[hasch] = self.buffers[packet_key]
@@ -105,14 +101,12 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                     self.buffers[packet_key] = ''
             else:
                 #get block payload from hashes
-                block_payload = self.hashes[packet.payload]
-                send_multiple(block_payload, self.address_to_port[packet.dest], packet.is_fin)
+                send_multiple(self.hashes[packet.payload], self.address_to_port[packet.dest], packet.is_fin)
         #Case 3
         else:
             # The packet must be destined to a host connected to the other middlebox
             # so send it across the WAN.
-            # self.send(packet, self.wan_port)
-
+            
             #add packet payload to block payload
             if packet_key not in self.buffers.keys():
                 self.buffers[packet_key] = packet.payload
@@ -122,13 +116,14 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                 self.buffers[packet_key] = block_payload
             #get block from buffer
             buffer_size = len(self.buffers[packet_key])
-            place_holder = 0
-            while buffer_size >= 48:
-                window = self.buffers[packet_key][place_holder:48 + place_holder]
+            place_holder = max(buffer_size - len(packet.payload), 47)
+            while place_holder < len(self.buffers[packet_key]):
+                place_holder += 1
+                window = self.buffers[packet_key][place_holder - 48:place_holder]
                 window_hash = utils.get_hash(window)
                 low_order_13 = utils.get_last_n_bits(window_hash, 13)
                 if low_order_13 == WanOptimizer.GLOBAL_MATCH_BITSTRING:
-                    block_payload = self.buffers[packet_key][:place_holder + 48]
+                    block_payload = self.buffers[packet_key][:place_holder]
                     hasch = utils.get_hash(block_payload)
                     if hasch in self.hashes.keys():
                         send_with_hash(hasch, packet.is_fin)
@@ -137,13 +132,8 @@ class WanOptimizer(wan_optimizer.BaseWanOptimizer):
                         #send_multiple
                         send_multiple(block_payload, self.wan_port, False)
                     #clear buffer
-                    self.buffers[packet_key] = self.buffers[packet_key][place_holder + 48:]
-                    place_holder += 48
-                    buffer_size -= 48
-                else:
-                    #slide window by 1
-                    place_holder += 1
-                    buffer_size -= 1
+                    self.buffers[packet_key] = self.buffers[packet_key][place_holder:]
+                    place_holder = 47
             if packet.is_fin:
                 hasch = utils.get_hash(self.buffers[packet_key])
                 #send packet
